@@ -125,5 +125,53 @@ F-statistic: 526.5 on 1 and 180 DF,  p-value: < 2.2e-16
 humid_lf_sq <- sqrt(mean((df_day_humid$Ballynahone - df_day_humid$`Lough Fea`)^2))
 [1] 4.960309
 
+############################################################ Using log transformed #####################################################################
+
+Call:
+lm(formula = log1p(Ballynahone) ~ log1p(Portglenone), data = df_day_rain)
+
+Residuals:
+     Min       1Q   Median       3Q      Max 
+-1.57771 -0.22808  0.04036  0.22640  1.23053 
+
+Coefficients:
+                   Estimate Std. Error t value Pr(>|t|)    
+(Intercept)        -0.04036    0.04821  -0.837    0.404    
+log1p(Portglenone)  0.79781    0.02777  28.730   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 0.4228 on 180 degrees of freedom
+Multiple R-squared:  0.821,	Adjusted R-squared:   0.82 
+F-statistic: 825.4 on 1 and 180 DF,  p-value: < 2.2e-16
+
+precip_sq <- sqrt(mean((df_day_rain$Ballynahone - df_day_rain$Portglenone)^2))
+> precip_sq
+[1] 5.64541
+
+Call:
+lm(formula = log1p(Ballynahone) ~ log1p(`Lough Fea`), data = df_day_rain)
+
+Residuals:
+    Min      1Q  Median      3Q     Max 
+-1.2225 -0.1570  0.1076  0.2029  1.1432 
+
+Coefficients:
+                   Estimate Std. Error t value Pr(>|t|)    
+(Intercept)        -0.10764    0.04850  -2.219   0.0277 *  
+log1p(`Lough Fea`)  0.71073    0.02394  29.692   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 0.4115 on 180 degrees of freedom
+Multiple R-squared:  0.8304,	Adjusted R-squared:  0.8295 
+F-statistic: 881.6 on 1 and 180 DF,  p-value: < 2.2e-16
+
+precip_lf_sq <- sqrt(mean((df_day_rain$Ballynahone - df_day_rain$`Lough Fea`)^2))
+precip_lf_sq
+[1] 9.479666
+
+
+
 
 
