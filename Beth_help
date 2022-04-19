@@ -1,0 +1,848 @@
+wd <- "//nercbuctdb.adceh.ceh.ac.uk/projects1/NECxxxxx_NIEA_Ballynahone_NH3//Ballynahone-Landscape_extended_Data//Wind/"
+setwd(wd)
+require(readxl)
+require(lubridate)
+require(data.table)
+require(tidyverse)
+require(dplyr)
+library(tidyr)
+library(openair)
+library(gridExtra)
+library(ggplot2)
+library(cowplot)
+library(ggpubr)
+
+x <- read_excel("Raw_data/Weather_Data_Ballynahone_13_04_2021.xlsx",sheet = "CR300Series_2_Table1")
+
+df <- as.data.frame(x)
+
+df <- df[order(df$TIMESTAMP),]
+
+df$Hour <- hour(df$TIMESTAMP)
+df$Minute <- minute(df$TIMESTAMP)
+df <- unique(df)
+
+row <- 1:nrow(df)
+
+df$row <- 1:nrow(df)
+
+correct_rows <- seq(1,nrow(df),3)
+
+for(i in 1:nrow(df)){
+  
+  if(i %in% correct_rows){
+    corr <- i
+  }
+  
+  if(! i %in% correct_rows){
+    df[df$row == i,"Minute"] <- df[df$row == corr, "Minute"]
+  }
+}
+
+df$Month <- lubridate::month(df$TIMESTAMP, label=T)
+df$Date <- as.Date(df$TIMESTAMP)
+df$Year <- year(df$Date)
+df$week <- week(df$Date)
+df$Week <- floor_date(as.Date(df$TIMESTAMP, "%m/%d/%Y %H:%M:%S", tz = "GB"), unit="week")
+
+df$WS_ms_S_WVT <- as.numeric(df$WS_ms_S_WVT)
+df$WindDir_D1_WVT <- as.numeric(df$WindDir_D1_WVT)
+df$AirTC_Avg <- as.numeric(df$AirTC_Avg)
+df$RH <- as.numeric(df$RH)
+df$Rain_mm_Tot <- as.numeric(df$Rain_mm_Tot)
+
+df0 <- df
+df1 <- df0[85:26208,]
+
+###Comparison to port & lf ####
+port_dir <- "P:/NECxxxxx_NIEA_Ballynahone_NH3/Ballynahone-Landscape_extended_Data/Wind/MIDAS_met_office_data/Portglenone/"
+
+port2021 <- fread(paste0(port_dir, "port_midas_wxhrly_202101-202112.csv"))
+port2020 <- fread(paste0(port_dir, "port_midas_wxhrly_202001-202012.csv"))
+prain2021 <- fread(paste0(port_dir, "port_midas_rainhrly_202001-202112.csv"))
+
+# Make 2020-2021 dataset
+p_comp <- bind_rows(port2021,port2020)
+
+# Select the variables
+pcomp_data <- p_comp %>% select(OB_TIME,AIR_TEMPERATURE,RLTV_HUM)
+
+# Join port rainfall data and set nas as 0
+prain2021 <- prain2021[,-1]
+pcomp_data <- left_join(pcomp_data, prain2021, by = "OB_TIME")
+pcomp_data[is.na(pcomp_data)] <- 0.0
+
+# make date right format
+pcomp_data$OB_TIME <- as.POSIXct(pcomp_data$OB_TIME,format="%Y-%m-%d%H:%M")
+names(pcomp_data)<- c("date","AirTC_Avg","RH","Rain_mm_Tot")
+pcomp_data$AirTC_Avg <- as.numeric(pcomp_data$AirTC_Avg)
+pcomp_data$RH <- as.numeric(pcomp_data$RH)
+pcomp_data$Rain_mm_Tot <- as.numeric(pcomp_data$Rain_mm_Tot)
+pcomp_data$Date <- as.Date(pcomp_data$date)
+pcomp_data <- pcomp_data[-c(2161:8750),]
+pcomp_data$Year <- year(pcomp_data$date)
+pcomp_data$Month <- lubridate::month(pcomp_data$date, label = T)
+pcomp_data$Hour <- hour(pcomp_data$date)
+pcomp_data$Minute <- minute(pcomp_data$date)
+pcomp_data$Week <- floor_date(as.Date(pcomp_data$date, "%m/%d/%Y %H:%M:%S", tz = "GB"), unit="week")
+time <- pcomp_data %>% select(date,Date, Hour, Minute, Week)
+
+###################### group ballynahone #########################
+df2 <- df1 %>% group_by(Date,Hour,Minute) %>% summarise(WindDir = mean(WindDir_D1_WVT), WindSp = mean(WS_ms_S_WVT)) 
+dfov <- df1
+as.Date(dfov$Date)
+# Extract for temporal
+dfov_hr <- dfov %>% group_by(Date,Hour) %>% summarize(Rain=sum(Rain_mm_Tot),Temp=mean(AirTC_Avg),
+                                                      Humid=mean(RH))
+dfov_hr$Site <- 'Ballynahone'
+
+dfov_day <- dfov %>% group_by(Date) %>% summarize(Rain=sum(Rain_mm_Tot),Temp=mean(AirTC_Avg),
+                                                  Humid=mean(RH)) %>% ungroup
+dfov_day$Site <- 'Ballynahone'
+
+dfov_wk <- dfov %>% group_by(Week) %>% summarize(Rain=sum(Rain_mm_Tot),Temp=mean(AirTC_Avg),
+                                                 Humid=mean(RH)) %>% ungroup
+dfov_wk$Site <- 'Ballynahone'
+
+
+dfov_mnth <- dfov %>% group_by(Month, Year) %>% summarize(Rain=sum(Rain_mm_Tot),Temp=mean(AirTC_Avg),
+                                                          Humid=mean(RH)) %>% ungroup
+dfov_mnth$Site <- 'Ballynahone'
+
+####################### group Portglenone ##########################
+pcomp_hr <- pcomp_data %>% rename(Rain=Rain_mm_Tot,Temp=AirTC_Avg,Humid=RH)
+pcomp_hr$Site <- 'Portglenone'
+p <- pcomp_data
+pcomp_day <- p %>% group_by(Date) %>% summarize(Rain=sum(Rain_mm_Tot),Temp=mean(AirTC_Avg),
+                                                Humid=mean(RH)) %>% ungroup
+pcomp_day$Site <- 'Portglenone'
+pcomp_day <- pcomp_day[-183,]
+
+pcomp_wk <- p %>% group_by(Week) %>% summarize(Rain=sum(Rain_mm_Tot),Temp=mean(AirTC_Avg),
+                                               Humid=mean(RH)) %>% ungroup
+pcomp_wk$Site <- 'Portglenone'
+pcomp_wk <- pcomp_wk[-28,]
+
+pcomp_mnth <- p %>% group_by(Month, Year) %>% summarize(Rain=sum(Rain_mm_Tot),Temp=mean(AirTC_Avg),
+                                                        Humid=mean(RH)) %>% ungroup
+pcomp_mnth$Site <- 'Portglenone'
+pcomp_mnth <- pcomp_mnth[-7,]
+
+
+######### Lough Fea ##########
+fea_dir <- "P:/NECxxxxx_NIEA_Ballynahone_NH3/Ballynahone-Landscape_extended_Data/Wind/MIDAS_met_office_data/Lough_Fea/"
+
+fea2021 <- fread(paste0(fea_dir, "fea_midas_wxhrly_202101-202112.csv"))
+fea2020 <- fread(paste0(fea_dir, "fea_midas_wxhrly_202001-202012.csv"))
+lfrain2021 <- fread(paste0(fea_dir, "fea_midas_rainhrly_202001-202112.csv"))
+
+# Make 2020-2021 dataset
+fea <- bind_rows(fea2021,fea2020)
+
+# Select the variables
+comp_data <- fea %>% select(OB_TIME,AIR_TEMPERATURE,RLTV_HUM)
+
+# Join lough fea rainfall data and set nas as 0
+lfrain2021 <- lfrain2021[,-1]
+comp_data <- left_join(comp_data, lfrain2021, by = "OB_TIME")
+comp_data[is.na(comp_data)] <- 0.0
+
+# make date right format
+comp_data$OB_TIME <- as.POSIXct(comp_data$OB_TIME,format="%Y-%m-%d%H:%M")
+names(comp_data)<- c("date","AirTC_Avg","RH","Rain_mm_Tot")
+comp_data$AirTC_Avg <- as.numeric(comp_data$AirTC_Avg)
+comp_data$RH <- as.numeric(comp_data$RH)
+comp_data$Rain_mm_Tot <- as.numeric(comp_data$Rain_mm_Tot)
+comp_data$Date <- as.Date(comp_data$date)
+comp_data <- comp_data[-c(2161:8746),]
+comp_data$Year <- year(comp_data$date)
+comp_data$Month <- lubridate::month(comp_data$date, label = T)
+comp_data$Hour <- hour(comp_data$date)
+comp_data$Week <- floor_date(as.Date(comp_data$date, "%m/%d/%Y %H:%M:%S", tz = "GB"), unit="week")
+
+####################### group Lough Fea ##########################
+comp_hr <- comp_data %>% rename(Rain=Rain_mm_Tot,Temp=AirTC_Avg,Humid=RH)
+comp_hr$Site <- 'Lough Fea'
+comp_day <- comp_data %>% group_by(Date) %>% summarize(Rain=sum(Rain_mm_Tot),Temp=mean(AirTC_Avg),
+                                                       Humid=mean(RH)) %>% ungroup()
+comp_day$Site <- 'Lough Fea'
+comp_day <- comp_day[-183,]
+
+comp_wk <- comp_data %>% group_by(Week) %>% summarize(Rain=sum(Rain_mm_Tot),Temp=mean(AirTC_Avg),
+                                                      Humid=mean(RH)) %>% ungroup
+comp_wk$Site <- 'Lough Fea'
+comp_wk <- comp_wk[-28,]
+
+comp_mnth <- comp_data %>% group_by(Month, Year) %>% summarize(Rain=sum(Rain_mm_Tot),Temp=mean(AirTC_Avg),
+                                                               Humid=mean(RH)) %>% ungroup
+comp_mnth$Site <- 'Lough Fea'
+comp_mnth <- comp_mnth[-7,]
+
+comp_day <- comp_day %>%
+  filter(Date %in% dfov_day$Date)
+pcomp_day <- pcomp_day %>%
+  filter(Date %in% dfov_day$Date)
+
+df_mnth <- do.call("rbind", list(dfov_mnth,pcomp_mnth,comp_mnth))
+df_wk <- do.call("rbind", list(dfov_wk,pcomp_wk,comp_wk))
+df_day <- do.call("rbind", list(dfov_day,pcomp_day,comp_day))
+df_hr <- do.call("rbind", list(dfov_hr,pcomp_hr,comp_hr))
+df_hr$Date[6420] <- "2021-03-28"
+df_hr$Hour[6420] <- 1
+df_hr$Date[10774] <- "2021-03-28"
+df_hr$Hour[10774] <- 1
+
+df_month <- df_mnth %>%
+  mutate(Site = fct_relevel(Site, 
+                            "Portglenone", "Ballynahone","Lough Fea"))
+
+df_week <- df_wk %>%
+  mutate(Site = fct_relevel(Site, 
+                            "Portglenone", "Ballynahone","Lough Fea"))
+
+df_day <- df_day %>%
+  mutate(Site = fct_relevel(Site, 
+                            "Portglenone", "Ballynahone","Lough Fea"))
+
+df_hr <- df_hr %>%
+  mutate(Site = fct_relevel(Site, 
+                            "Portglenone", "Ballynahone","Lough Fea"))
+
+df_hour <- merge(df_hr, time, by=c("Date", "Hour"))
+df_hour <- df_hour[,-c(7:8)]
+
+################### Hourly Comparison Line Plots ##########################
+
+rain_hrly_comp <- ggplot(data=df_hour, aes(y=Rain, x=date.y)) +
+  geom_line(aes(color = Site))+
+  scale_y_continuous(limits=c(-1,30),breaks=seq(0, 30, 10)) +
+  facet_grid(Site ~ .) +
+  xlab("Month") + 
+  ylab("Hourly Precipitation (mm)") +  # label the x & y axes
+  ggtitle("Comparison of Average Hourly Precipitation") +
+  scale_x_datetime(date_breaks = "1 month", date_labels = "%b-%y") +
+  ggthemes::theme_stata() +
+  theme(axis.text.x = element_text(size=20),
+        axis.text.y = element_text(size=20, hjust = 1.2),
+        axis.title=element_text(size=24),
+        strip.text.y = element_text(size = 22),
+        legend.position="none",
+        plot.title = element_text(size = 28, margin = margin(1, 0, 15, 0)))
+
+plot(rain_hrly_comp)
+
+ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/Line_plots/ballyvsmet_rain_hourly_line_graphs_1020_0321.png"),
+  width = 16, height = 10, dpi = 300)
+
+temp_hrly_comp <- ggplot(data=df_hour, aes(y=Temp, x=date.y)) +
+  geom_line(aes(color = Site))+
+  scale_y_continuous(limits=c(-10,30),breaks=seq(-10, 30, 10)) +
+  facet_grid(Site ~ .) +
+  xlab("Month") + 
+  ylab("Hourly Air Temperature (°C)") +  # label the x & y axes
+  ggtitle("Comparison of Average Hourly Air Temperature") +
+  scale_x_datetime(date_breaks = "1 month", date_labels = "%b-%y") +
+  ggthemes::theme_stata() +
+  theme(axis.text.x = element_text(size=20),
+        axis.text.y = element_text(size=20, hjust = 1.2),
+        axis.title=element_text(size=24),
+        strip.text.y = element_text(size = 22),
+        legend.position="none",
+        plot.title = element_text(size = 28, margin = margin(1, 0, 15, 0)))
+
+plot(temp_hrly_comp)
+
+ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/Line_plots/ballyvsmet_temp_hourly_line_graphs_1020_0321.png"),
+  width = 16, height = 10, dpi = 300)
+
+rh_hrly_comp <- ggplot(data=df_hour, aes(y=Humid, x=date.y)) +
+  geom_line(aes(color = Site))+
+  scale_y_continuous(limits=c(0,100),breaks=seq(0, 100, 25)) +
+  facet_grid(Site ~ .) +
+  xlab("Month") + 
+  ylab("Hourly Relative Humidity (%)") +  # label the x & y axes
+  ggtitle("Comparison of Average Hourly Relative Humidity") +
+  scale_x_datetime(date_breaks = "1 month", date_labels = "%b-%y") +
+  ggthemes::theme_stata() +
+  theme(axis.text.x = element_text(size=20),
+        axis.text.y = element_text(size=20, hjust = 1.2),
+        axis.title=element_text(size=24),
+        strip.text.y = element_text(size = 22),
+        legend.position="none",
+        plot.title = element_text(size = 28, margin = margin(1, 0, 15, 0)))
+
+plot(rh_hrly_comp)
+
+ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/Line_plots/ballyvsmet_humid_hourly_line_graphs_1020_0321.png"),
+  width = 16, height = 10, dpi = 300)
+
+##################### Daily Comparisons Line Graphs #########################
+
+rain_daily_comp <- ggplot(data=df_day, aes(y=Rain, x=Date)) +
+  geom_line(aes(color = Site))+
+  scale_y_continuous(limits=c(-1,80),breaks=seq(0, 80, 20)) +
+  facet_grid(Site ~ .) +
+  xlab("Month") + 
+  ylab("Daily Precipitation (mm)") +  # label the x & y axes
+  ggtitle("Comparison of Average Daily Precipitation") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%y") +
+  ggthemes::theme_stata()+
+  theme(axis.text.x = element_text(size=20),
+        axis.text.y = element_text(size=20, hjust = 1.2),
+        axis.title=element_text(size=24),
+        strip.text.y = element_text(size = 22),
+        legend.position="none",
+        plot.title = element_text(size = 28, margin = margin(1, 0, 15, 0)))
+
+plot(rain_daily_comp)
+
+ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/Line_plots/ballyvsmet_rain_daily_line_graphs_1020_0321.png"),
+  width = 16, height = 10, dpi = 300)
+
+temp_daily_comp <- ggplot(data=df_day, aes(y=Temp, x=Date)) +
+  geom_line(aes(color = Site))+
+  scale_y_continuous(limits=c(-10,30),breaks=seq(-10, 30, 10)) +
+  facet_grid(Site ~ .) +
+  xlab("Month") + 
+  ylab("Daily Air Temperature (°C)") +  # label the x & y axes
+  ggtitle("Comparison of Average Daily Air Temperature") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%y") +
+  ggthemes::theme_stata()+
+  theme(axis.text.x = element_text(size=20),
+        axis.text.y = element_text(size=20, hjust = 1.2),
+        axis.title=element_text(size=24),
+        strip.text.y = element_text(size = 22),
+        legend.position="none",
+        plot.title = element_text(size = 28, margin = margin(1, 0, 15, 0)))
+
+plot(temp_daily_comp)
+
+ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/Line_plots/ballyvsmet_temp_daily_line_graphs_1020_0321.png"),
+  width = 16, height = 10, dpi = 300)
+
+rh_daily_comp <- ggplot(data=df_day, aes(y=Humid, x=Date)) +
+  geom_line(aes(color = Site))+
+  scale_y_continuous(limits=c(0,100),breaks=seq(0, 100, 25)) +
+  facet_grid(Site ~ .) +
+  xlab("Month") + 
+  ylab("Daily Relative Humidity (%)") +  # label the x & y axes
+  ggtitle("Comparison of Average Daily Relative Humidity") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%y") +
+  ggthemes::theme_stata()+
+  theme(axis.text.x = element_text(size=20),
+        axis.text.y = element_text(size=20, hjust = 1.2),
+        axis.title=element_text(size=24),
+        strip.text.y = element_text(size = 22),
+        legend.position="none",
+        plot.title = element_text(size = 28, margin = margin(1, 0, 15, 0)))
+
+plot(rh_daily_comp)
+
+ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/Line_plots/ballyvsmet_humid_daily_line_graphs_1020_0321.png"),
+  width = 16, height = 10, dpi = 300)
+
+############################# Modelling Bally vs Port & Lough Fea ####################################
+
+df_day_rain <- reshape2::dcast(df_day, Date~Site, value.var = "Rain")
+
+df_day_rain_zeros <- df_day_rain %>% filter(Ballynahone < 1.0)
+precip <- lm(`Ballynahone` ~ `Portglenone`,df_day_rain_zeros)
+equatiomatic::extract_eq(precip, use_coefs = TRUE)
+precip_sq <- sqrt(mean((df_day_rain_zeros$Ballynahone - df_day_rain_zeros$Portglenone)^2))
+precip_resid <- resid(precip)
+plot(precip_resid)
+plot(precip)
+precip_p <- df_day_rain_zeros %>% filter(Portglenone < 1.0)
+precip_lf <- df_day_rain_zeros %>% filter(`Lough Fea` < 1.0)
+
+df_day_rain_Xzeros <- df_day_rain %>% filter(Ballynahone >= 1.0)
+
+precip_Xzeros <- lm(`Ballynahone` ~ `Portglenone`,df_day_rain_Xzeros)
+equatiomatic::extract_eq(precip_Xzeros, use_coefs = TRUE)
+precip_sq_Xzeros <- sqrt(mean((df_day_rain_Xzeros$Ballynahone - df_day_rain_Xzeros$Portglenone)^2))
+precip_resid_Xzeros <- resid(precip_Xzeros)
+plot(precip_resid_Xzeros)
+plot(precip_Xzeros)
+summary(precip_Xzeros)
+
+coeff <- predict(precip_Xzeros, newdata = list("Portglenone"= 0:70), interval="confidence")
+coeff <- as.data.frame(coeff)
+
+p <- ggplot()
+
+p <- p + geom_point(data = precip_Xzeros, aes(x = Portglenone, y = Ballynahone), color = "black", size = 0.5)
+p <- p + geom_abline(intercept = 1.72348 , slope = 0.46983, color = "red")
+p <- p + geom_ribbon(data = coeff, aes( x=0:70, ymin = lwr, ymax = upr), alpha=0.3) 
+
+p <-  p + coord_fixed()
+
+p <- p + geom_abline(intercept = 0, slope = 1)
+p <- p + ylim(0, 75)
+
+p <-p + ylab(bquote("Portglenone daily precipitation (mm)"))
+p <-p + xlab(bquote("Ballynahone daily precipitation (mm)"))
+
+p <- p + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
+               axis.title.x=element_text(size = 14, color = "black", face = "bold"),
+               strip.background = element_blank(),
+               axis.line = element_line(size = 1, color = "black"),
+               
+               axis.text = element_text(size = 14, color = "black", face = "bold"),
+               panel.background = element_blank(),
+               legend.text = element_text(size = 16, color = "black"),
+               legend.title = element_text(size = 18, color = "black", face = "bold"),
+               strip.text = element_text(size = 24, color = "black", face = "bold"),
+               plot.margin = margin(t = 0, r = -10, b = 0, l = 0), 
+               
+               panel.border = element_blank(),
+               panel.grid.major = element_line(color = "black",size = 0.2),
+               panel.grid.minor = element_line(color = "grey",size = 0.2))
+
+p
+
+ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/LM/bally_vs_port_scatter_precip_new_01102021-310321.png"),
+  width = 14, height = 8, dpi = 300)
+
+
+precip_lf <- lm(`Ballynahone` ~ `Lough Fea`,df_day_rain_zeros)
+equatiomatic::extract_eq(precip_lf, use_coefs = TRUE)
+precip_sq_lf <- sqrt(mean((df_day_rain_zeros$Ballynahone - df_day_rain_zeros$`Lough Fea`)^2))
+precip_resid_lf <- resid(precip_lf)
+plot(precip_resid_lf)
+plot(precip_lf)
+
+precip_lf_Xzeros <- lm(`Ballynahone` ~ `Lough Fea`,df_day_rain_Xzeros)
+equatiomatic::extract_eq(precip_lf_Xzeros, use_coefs = TRUE)
+precip_sq_lf_Xzeros <- sqrt(mean((df_day_rain_Xzeros$Ballynahone - df_day_rain_Xzeros$`Lough Fea`)^2))
+precip_resid_lf_Xzeros <- resid(precip_lf_Xzeros)
+plot(precip_resid_lf_Xzeros)
+plot(precip_lf_Xzeros)
+summary(precip_lf_Xzeros)
+
+lf_coeff <- predict(precip_lf_Xzeros, newdata = list("Lough Fea"= 0:70), interval="confidence")
+lf_coeff <- as.data.frame(lf_coeff)
+
+pq <- ggplot()
+
+pq <- pq + geom_point(data = precip_lf_Xzeros, aes(x = `Lough Fea`, y = Ballynahone), color = "black", size = 0.5)
+pq <- pq + geom_abline(intercept = 0.49827 , slope = 0.38660, color = "red")
+pq <- pq + geom_ribbon(data = lf_coeff, aes( x=0:70, ymin = lwr, ymax = upr), alpha=0.3) 
+
+pq <-  pq + coord_fixed()
+
+pq <- pq + geom_abline(intercept = 0, slope = 1)
+pq <- pq + ylim(0, 75)
+
+pq <- pq + ylab(bquote("Lough Fea daily precipitation (mm)"))
+pq <- pq + xlab(bquote("Ballynahone daily precipitation (mm)"))
+
+pq <- pq + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
+                 axis.title.x=element_text(size = 14, color = "black", face = "bold"),
+                 strip.background = element_blank(),
+                 axis.line = element_line(size = 1, color = "black"),
+                 
+                 axis.text = element_text(size = 14, color = "black", face = "bold"),
+                 panel.background = element_blank(),
+                 legend.text = element_text(size = 16, color = "black"),
+                 legend.title = element_text(size = 18, color = "black", face = "bold"),
+                 strip.text = element_text(size = 24, color = "black", face = "bold"),
+                 plot.margin = margin(t = 0, r = 0, b = 0, l = -10), 
+                 
+                 panel.border = element_blank(),
+                 panel.grid.major = element_line(color = "black",size = 0.2),
+                 panel.grid.minor = element_line(color = "grey",size = 0.2))
+
+pq
+
+rain_plots <- plot_grid(p, pq, align = "hv", ncol = 2, nrow = 1)
+
+plot(rain_plots)
+ggsave(paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/LM/bally_vs_port&lf_scatter_precip_new_01102021-310321.png"),
+       width = 14, height = 8, dpi = 300)
+
+######################## Weekly precip ##############################
+df_wk_rain <- reshape2::dcast(df_week, Week~Site, value.var = "Rain")
+
+precip_wk <- lm(`Ballynahone` ~ `Portglenone`,df_wk_rain)
+equatiomatic::extract_eq(precip_wk, use_coefs = TRUE)
+precip_wk_sq <- sqrt(mean((df_wk_rain$Ballynahone - df_wk_rain$Portglenone)^2)) 
+plot(precip_wk)
+summary(precip_wk)
+coeff <- predict(precip_wk, newdata = list("Portglenone"= 0:150), interval="confidence")
+coeff <- as.data.frame(coeff)
+
+p <- ggplot()
+
+p <- p + geom_point(data = df_wk_rain, aes(x = Portglenone, y = Ballynahone), color = "black", size = 0.5)
+p <- p + geom_abline(intercept = 2.5287 , slope = 0.5412, color = "red")
+p <- p + geom_ribbon(data = coeff, aes( x=0:150, ymin = lwr, ymax = upr), alpha=0.3) 
+
+p <-  p + coord_fixed()
+
+p <- p + geom_abline(intercept = 0, slope = 1)
+p <- p + ylim(0, 150)
+
+p <-p + xlab(bquote("Portglenone weekly precipitation (mm)"))
+p <-p + ylab(bquote("Ballynahone weekly precipitation (mm)"))
+
+p <- p + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
+               axis.title.x=element_text(size = 14, color = "black", face = "bold"),
+               strip.background = element_blank(),
+               axis.line = element_line(size = 1, color = "black"),
+               
+               axis.text = element_text(size = 14, color = "black", face = "bold"),
+               panel.background = element_blank(),
+               legend.text = element_text(size = 16, color = "black"),
+               legend.title = element_text(size = 18, color = "black", face = "bold"),
+               strip.text = element_text(size = 24, color = "black", face = "bold"),
+               plot.margin = margin(t = 0, r = -10, b = 0, l = 0), 
+               
+               panel.border = element_blank(),
+               panel.grid.major = element_line(color = "black",size = 0.2),
+               panel.grid.minor = element_line(color = "grey",size = 0.2))
+
+p
+
+ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/LM/bally_vs_port_scatter_precip_wk_new_01102021-310321.png"),
+  width = 14, height = 8, dpi = 300)
+
+precip_wk_lf <- lm(`Ballynahone` ~ `Lough Fea`,df_wk_rain)
+equatiomatic::extract_eq(precip_wk_lf, use_coefs = TRUE)
+precip_wk_sq <- sqrt(mean((df_wk_rain$Ballynahone - df_wk_rain$`Lough Fea`)^2))
+precip_wk_resid <- resid(precip_wk_lf)
+plot(precip_wk_resid)
+plot(precip_wk_lf)
+summary(precip_wk_lf)
+
+lf_coeff <- predict(precip_wk_lf, newdata = list("Lough Fea"= 0:150), interval="confidence")
+lf_coeff <- as.data.frame(lf_coeff)
+
+pq <- ggplot()
+
+pq <- pq + geom_point(data = df_wk_rain, aes(x = `Lough Fea`, y = Ballynahone), color = "black", size = 0.5)
+pq <- pq + geom_abline(intercept = -0.36031 , slope = 0.40635, color = "red")
+pq <- pq + geom_ribbon(data = lf_coeff, aes( x=0:150, ymin = lwr, ymax = upr), alpha=0.3) 
+
+pq <-  pq + coord_fixed()
+
+pq <- pq + geom_abline(intercept = 0, slope = 1)
+pq <- pq + ylim(0, 150)
+
+pq <-pq + ylab(bquote("Ballynahone weekly precipitation (mm)"))
+pq <-pq + xlab(bquote("Lough Fea weekly precipitation (mm)"))
+
+pq <- pq + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
+                 axis.title.x=element_text(size = 14, color = "black", face = "bold"),
+                 strip.background = element_blank(),
+                 axis.line = element_line(size = 1, color = "black"),
+                 
+                 axis.text = element_text(size = 14, color = "black", face = "bold"),
+                 panel.background = element_blank(),
+                 legend.text = element_text(size = 16, color = "black"),
+                 legend.title = element_text(size = 18, color = "black", face = "bold"),
+                 strip.text = element_text(size = 24, color = "black", face = "bold"),
+                 plot.margin = margin(t = 0, r = 0, b = 0, l = -10), 
+                 
+                 panel.border = element_blank(),
+                 panel.grid.major = element_line(color = "black",size = 0.2),
+                 panel.grid.minor = element_line(color = "grey",size = 0.2))
+
+pq
+
+rain_plots <- plot_grid(p, pq, align = "hv", ncol = 2, nrow = 1)
+
+plot(ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/LM/bally_vs_port&lf_scatter_precip_wk_new_01102021-310321.png"), width = 14, height = 8, dpi = 300))
+
+#################### Monthly Precipitation ######################
+df_mnth_rain <- reshape2::dcast(df_month, Month + Year~Site, value.var = "Rain")
+
+precip_mnth <- lm(`Ballynahone` ~ `Portglenone`,df_mnth_rain)
+equatiomatic::extract_eq(precip_mnth, use_coefs = TRUE)
+precip_mnth_sq <- sqrt(mean((df_mnth_rain$Ballynahone - df_mnth_rain$Portglenone)^2)) 
+precip_mnth_resid <- resid(precip_mnth)
+plot(precip_mnth_resid)
+plot(precip_mnth)
+summary(precip_mnth)
+
+p <- ggplot(data = precip_mnth, aes(x = Ballynahone, y = Portglenone))
+
+p <- p + geom_point(color = "black", size = 0.5)
+p <- p + geom_smooth(method='lm', formula = y~x, color = "blue")
+
+p <-  p + coord_fixed()
+
+p <- p + geom_abline(intercept = 0, slope = 1)
+p <- p + ylim(0, 350)
+
+p <-p + ylab(bquote("Portglenone monthly precipitation (mm)"))
+p <-p + xlab(bquote("Ballynahone monthly precipitation (mm)"))
+
+p <- p + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
+               axis.title.x=element_text(size = 14, color = "black", face = "bold"),
+               strip.background = element_blank(),
+               axis.line = element_line(size = 1, color = "black"),
+               
+               axis.text = element_text(size = 14, color = "black", face = "bold"),
+               panel.background = element_blank(),
+               legend.text = element_text(size = 16, color = "black"),
+               legend.title = element_text(size = 18, color = "black", face = "bold"),
+               strip.text = element_text(size = 24, color = "black", face = "bold"),
+               plot.margin = margin(t = 0, r = -10, b = 0, l = 0), 
+               
+               panel.border = element_blank(),
+               panel.grid.major = element_line(color = "black",size = 0.2),
+               panel.grid.minor = element_line(color = "grey",size = 0.2))
+
+p
+
+ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/LM/bally_vs_port_scatter_precip_mnth_01102021-310321.png"),
+  width = 14, height = 8, dpi = 300)
+
+precip_lf_mnth <- lm(`Ballynahone` ~ `Lough Fea`,df_mnth_rain)
+equatiomatic::extract_eq(precip_lf_mnth, use_coefs = TRUE)
+precip_lf_mnth_sq <- sqrt(mean((df_mnth_rain$Ballynahone - df_mnth_rain$`Lough Fea`)^2))
+precip_lf_mnth_resid <- resid(precip_lf_mnth)
+plot(precip_lf_mnth_resid)
+plot(precip_lf_mnth)
+summary(precip_lf_mnth)
+
+pq <- ggplot(data = precip_lf_mnth, aes(x = Ballynahone, y = `Lough Fea`))
+
+pq <- pq + geom_point(color = "black", size = 0.5)
+pq <- pq + geom_smooth(method='lm', formula = y~x, color = "blue")
+
+pq <-  pq + coord_fixed()
+
+pq <- pq + geom_abline(intercept = 0, slope = 1)
+pq <- pq + ylim(0, 350)
+
+pq <-pq + ylab(bquote("Lough Fea weekly precipitation (mm)"))
+pq <-pq + xlab(bquote("Ballynahone weekly precipitation (mm)"))
+
+pq <- pq + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
+                 axis.title.x=element_text(size = 14, color = "black", face = "bold"),
+                 strip.background = element_blank(),
+                 axis.line = element_line(size = 1, color = "black"),
+                 
+                 axis.text = element_text(size = 14, color = "black", face = "bold"),
+                 panel.background = element_blank(),
+                 legend.text = element_text(size = 16, color = "black"),
+                 legend.title = element_text(size = 18, color = "black", face = "bold"),
+                 strip.text = element_text(size = 24, color = "black", face = "bold"),
+                 plot.margin = margin(t = 0, r = 0, b = 0, l = -10), 
+                 
+                 panel.border = element_blank(),
+                 panel.grid.major = element_line(color = "black",size = 0.2),
+                 panel.grid.minor = element_line(color = "grey",size = 0.2))
+
+pq
+
+rain_plots <- plot_grid(p, pq, align = "hv", ncol = 2, nrow = 1)
+plot(rain_plots)
+
+plot(ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/LM/bally_vs_port&lf_scatter_precip_mnth_01102021-310321.png"), width = 14, height = 8, dpi = 300))
+
+############### Daily temp models #####################
+
+df_day_temp <- reshape2::dcast(df_day, Date~Site, value.var = "Temp")
+
+temp <- lm(`Ballynahone` ~ `Portglenone`,df_day_temp)
+equatiomatic::extract_eq(temp, use_coefs = TRUE)
+temp_sq <- sqrt(mean((df_day_temp$Ballynahone - df_day_temp$Portglenone)^2))
+temp_resid <- resid(temp)
+plot(temp_resid)
+plot(temp)
+summary(temp)
+
+coeff <- predict(temp, newdata = list("Portglenone"= 0:20), interval="confidence")
+coeff <- as.data.frame(coeff)
+
+p <- ggplot()
+
+p <- p + geom_point(data = df_day_temp, aes(x = Ballynahone, y = Portglenone), color = "black", size = 0.5)
+p <- p + geom_abline(intercept = -0.2293 , slope = 1.0150, color = "red")
+p <- p + geom_ribbon(data = coeff, aes( x=0:20, ymin = lwr, ymax = upr), alpha=0.3) 
+
+p <-  p + coord_fixed()
+
+p <- p + geom_abline(intercept = 0, slope = 1)
+
+p <-p + ylab(bquote("Ballynahone average daily air temperature (°C)"))
+p <- p + xlab(bquote("Portglenone average daily \nair temperature (°C)"))
+
+p <- p + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
+               axis.title.x=element_text(size = 14, color = "black", face = "bold"),
+               strip.background = element_blank(),
+               axis.line = element_line(size = 1, color = "black"),
+               
+               axis.text = element_text(size = 14, color = "black", face = "bold"),
+               panel.background = element_blank(),
+               legend.text = element_text(size = 16, color = "black"),
+               legend.title = element_text(size = 18, color = "black", face = "bold"),
+               strip.text = element_text(size = 24, color = "black", face = "bold"),
+               
+               panel.border = element_blank(),
+               panel.grid.major = element_line(color = "black",size = 0.2),
+               panel.grid.minor = element_line(color = "grey",size = 0.2))
+
+p
+
+ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/LM/bally_vs_port_scatter_temp_new_01102021-310321.png"),
+  width = 14, height = 8, dpi = 300)
+
+temp_lf <- lm(`Ballynahone` ~ `Lough Fea`,df_day_temp)
+equatiomatic::extract_eq(temp_lf, use_coefs = TRUE)
+temp_lf_sq <- sqrt(mean((df_day_temp$Ballynahone - df_day_temp$`Lough Fea`)^2))
+temp_resid_lf <- resid(temp_lf)
+plot(temp_resid_lf)
+plot(temp_lf)
+summary(temp_lf)
+
+lf_coeff <- predict(temp_lf, newdata = list("Lough Fea"= 0:20), interval="confidence")
+lf_coeff <- as.data.frame(lf_coeff)
+
+pq <- ggplot()
+
+pq <- pq + geom_point(data = df_day_temp, aes(x = `Lough Fea`, y = Ballynahone), color = "black", size = 0.5)
+pq <- pq + geom_abline(intercept = 0.49934 , slope = 1.04693, color = "red")
+pq <- pq + geom_ribbon(data = coeff, aes( x=0:20, ymin = lwr, ymax = upr), alpha=0.3) 
+
+pq <-  pq + coord_fixed()
+
+pq <- pq + geom_abline(intercept = 0, slope = 1)
+
+pq <-pq + xlab(bquote("Lough Fea average daily \nair temperature (°C)"))
+pq <-pq + ylab(bquote("Ballynahone average daily air temperature (°C)"))
+
+pq <- pq + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
+                 axis.title.x=element_text(size = 14, color = "black", face = "bold"),
+                 strip.background = element_blank(),
+                 axis.line = element_line(size = 1, color = "black"),
+                 
+                 axis.text = element_text(size = 14, color = "black", face = "bold"),
+                 panel.background = element_blank(),
+                 legend.text = element_text(size = 16, color = "black"),
+                 legend.title = element_text(size = 18, color = "black", face = "bold"),
+                 strip.text = element_text(size = 24, color = "black", face = "bold"),
+                 
+                 panel.border = element_blank(),
+                 panel.grid.major = element_line(color = "black",size = 0.2),
+                 panel.grid.minor = element_line(color = "grey",size = 0.2))
+
+pq
+
+temp_plots <- plot_grid(p, pq, nrow = 2, align = "v", scale = 0.9)
+
+ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/LM/bally_vs_port&lf_scatter_temp_new_01102021-310321.png"),
+  width = 14, height = 8, dpi = 300)
+
+
+df_day_humid <- reshape2::dcast(df_day, Date~Site, value.var = "Humid")
+
+humid <- lm(`Ballynahone` ~ `Portglenone`,df_day_humid)
+equatiomatic::extract_eq(humid, use_coefs = TRUE)
+humid_sq <- sqrt(mean((df_day_humid$Ballynahone - df_day_humid$Portglenone)^2))
+humid_resid <- resid(humid)
+plot(humid_resid)
+plot(humid)
+summary(humid)
+
+coeff <- predict(humid, newdata = list("Portglenone"= 70:100), interval="confidence")
+coeff <- as.data.frame(coeff)
+
+p <- ggplot()
+
+p <- p + geom_point(data = df_day_humid, aes(x = Portglenone, y = Ballynahone), color = "black", size = 0.5)
+p <- p + geom_abline(intercept = 20.84590 , slope = 0.75766, color = "red")
+p <- p + geom_ribbon(data = coeff, aes( x=70:100, ymin = lwr, ymax = upr), alpha=0.3) 
+
+p <- p + coord_cartesian(xlim =c(70, 100), ylim = c(70, 100))
+
+p <- p + geom_abline(intercept = 0, slope = 1)
+
+
+p <-p + xlab(bquote("Portglenone average daily \nrelative humidity (°C)"))
+p <-p + ylab(bquote("Ballynahone average daily humidity (%)"))
+
+p <- p + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
+               axis.title.x=element_text(size = 14, color = "black", face = "bold"),
+               strip.background = element_blank(),
+               axis.line = element_line(size = 1, color = "black"),
+               
+               axis.text = element_text(size = 14, color = "black", face = "bold"),
+               panel.background = element_blank(),
+               legend.text = element_text(size = 16, color = "black"),
+               legend.title = element_text(size = 18, color = "black", face = "bold"),
+               strip.text = element_text(size = 24, color = "black", face = "bold"),
+               
+               panel.border = element_blank(),
+               panel.grid.major = element_line(color = "black",size = 0.2),
+               panel.grid.minor = element_line(color = "grey",size = 0.2))
+
+p
+
+ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/LM/bally_vs_port_scatter_humid_new_01102021-310321.png"),
+  width = 14, height = 8, dpi = 300)
+
+
+humid_lf <- lm(`Ballynahone` ~ `Lough Fea`,df_day_humid)
+equatiomatic::extract_eq(humid_lf, use_coefs = TRUE)
+humid_lf_sq <- sqrt(mean((df_day_humid$Ballynahone - df_day_humid$`Lough Fea`)^2))
+humid_resid_lf <- resid(humid_lf)
+plot(humid_resid_lf)
+plot(humid_lf)
+summary(humid_lf)
+
+lf_coeff <- predict(humid_lf, newdata = list("Lough Fea"= 70:100), interval="confidence")
+lf_coeff <- as.data.frame(lf_coeff)
+
+pq <- ggplot()
+
+pq <- pq + geom_point(data = df_day_humid, aes(x = `Lough Fea`, y = Ballynahone), color = "black", size = 0.5)
+pq <- pq + geom_abline(intercept = 15.2272 , slope = 0.7940, color = "red")
+pq <- pq + geom_ribbon(data = lf_coeff, aes( x=70:100, ymin = lwr, ymax = upr), alpha=0.3) 
+
+pq <- pq + coord_cartesian(xlim =c(70, 100), ylim = c(70, 100))
+
+pq <- pq + geom_abline(intercept = 0, slope = 1)
+
+
+pq <-pq + xlab(bquote("Lough Fea average daily \nrelative humidity (°C)"))
+p <-p + ylab(bquote("Ballynahone average daily humidity (%)"))
+
+pq <- pq + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
+                 axis.title.x=element_text(size = 14, color = "black", face = "bold"),
+                 strip.background = element_blank(),
+                 axis.line = element_line(size = 1, color = "black"),
+                 
+                 axis.text = element_text(size = 14, color = "black", face = "bold"),
+                 panel.background = element_blank(),
+                 legend.text = element_text(size = 16, color = "black"),
+                 legend.title = element_text(size = 18, color = "black", face = "bold"),
+                 strip.text = element_text(size = 24, color = "black", face = "bold"),
+                 
+                 panel.border = element_blank(),
+                 panel.grid.major = element_line(color = "black",size = 0.2),
+                 panel.grid.minor = element_line(color = "grey",size = 0.2))
+
+pq
+
+humid_plots <- plot_grid(p, pq, nrow = 2, align = "v", scale = 0.9)
+
+ggsave(
+  paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/LM/bally_vs_port&lf_scatter_humid_new_01102021-310321.png"),
+  width = 14, height = 8, dpi = 300)
