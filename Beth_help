@@ -557,7 +557,7 @@ pq <- pq + theme(axis.title.y=element_text(size = 14, color = "black", face = "b
 
 pq
 
-rain_plots <- plot_grid(p, pq, align = "hv", ncol = 2, nrow = 1)
+rain_plots <- plot_grid(p, pq, nrow = 2, align = "v", scale = 0.9)
 
 plot(ggsave(
   paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/LM/bally_vs_port&lf_scatter_precip_wk_new_01102021-310321.png"), width = 14, height = 8, dpi = 300))
@@ -678,7 +678,7 @@ p <-  p + coord_fixed()
 
 p <- p + geom_abline(intercept = 0, slope = 1)
 
-p <-p + ylab(bquote("Ballynahone average daily air temperature (°C)"))
+p <-p + ylab(bquote("Ballynahone average daily \nair temperature (°C)"))
 p <- p + xlab(bquote("Portglenone average daily \nair temperature (°C)"))
 
 p <- p + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
@@ -724,7 +724,7 @@ pq <-  pq + coord_fixed()
 pq <- pq + geom_abline(intercept = 0, slope = 1)
 
 pq <-pq + xlab(bquote("Lough Fea average daily \nair temperature (°C)"))
-pq <-pq + ylab(bquote("Ballynahone average daily air temperature (°C)"))
+pq <-pq + ylab(bquote("Ballynahone average daily \nair temperature (°C)"))
 
 pq <- pq + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
                  axis.title.x=element_text(size = 14, color = "black", face = "bold"),
@@ -749,6 +749,7 @@ ggsave(
   paste0("P:/NECxxxxx_NIEA_Ballynahone_NH3/2021-05-26_othervar_comparison/other_vars/LM/bally_vs_port&lf_scatter_temp_new_01102021-310321.png"),
   width = 14, height = 8, dpi = 300)
 
+###### Daily humidity ######
 
 df_day_humid <- reshape2::dcast(df_day, Date~Site, value.var = "Humid")
 
@@ -774,8 +775,8 @@ p <- p + coord_cartesian(xlim =c(70, 100), ylim = c(70, 100))
 p <- p + geom_abline(intercept = 0, slope = 1)
 
 
-p <-p + xlab(bquote("Portglenone average daily \nrelative humidity (°C)"))
-p <-p + ylab(bquote("Ballynahone average daily humidity (%)"))
+p <-p + xlab(bquote("Portglenone average daily \nrelative humidity (%)"))
+p <-p + ylab(bquote("Ballynahone average daily \nrelative humidity (%)"))
 
 p <- p + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
                axis.title.x=element_text(size = 14, color = "black", face = "bold"),
@@ -821,8 +822,8 @@ pq <- pq + coord_cartesian(xlim =c(70, 100), ylim = c(70, 100))
 pq <- pq + geom_abline(intercept = 0, slope = 1)
 
 
-pq <-pq + xlab(bquote("Lough Fea average daily \nrelative humidity (°C)"))
-p <-p + ylab(bquote("Ballynahone average daily humidity (%)"))
+pq <-pq + xlab(bquote("Lough Fea average daily \nrelative humidity (%)"))
+pq <-pq + ylab(bquote("Ballynahone average daily \nrelative humidity (%)"))
 
 pq <- pq + theme(axis.title.y=element_text(size = 14, color = "black", face = "bold"),
                  axis.title.x=element_text(size = 14, color = "black", face = "bold"),
